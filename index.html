@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Online Saved People Table (Firebase) - Editable</title>
+<style>
+  /* Dark theme */
+  body {
+    margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #121212;
+    color: #eee;
+  }
+  header {
+    background: #1f1f1f;
+    padding: 20px;
+    text-align: center;
+    border-bottom: 1px solid #333;
+    color: #00ffc3;
+    font-weight: bold;
+    font-size: 28px;
+  }
+  main {
+    max-width: 900px;
+    margin: 20px auto;
+    padding: 0 15px;
+  }
+  form {
+    background: #1a1a1a;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 12px #000;
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  input[type="text"], select {
+    font-size: 16px;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background-color: #222;
+    color: #eee;
+    flex: 1 1 200px;
+  }
+  button {
+    background-color: #00ffc3;
+    color: #000;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+  }
+  button:hover {
+    background-color: #00b68f;
+  }
+  #searchInput {
+    margin: 0 auto 10px;
+    max-width: 900px;
+    display: block;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    background-color: #222;
+    color: #eee;
+    font-size: 16px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #1e1e1e;
+    box-shadow: 0 0 10px #000;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 14px 10px;
+    text-align: left;
+    border-bottom: 1px solid #333;
+    user-select: none;
+  }
+  th {
+    background-color: #292929;
+    color: #00ffc3;
+  }
+  tr:hover {
+    background-color: #333;
+  }
+  .actions button {
+    background-color: #444;
+    color: #eee;
+    border-radius: 5px;
+    padding: 6px 12px;
+    margin-right: 5px;
+    border: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  .actions button:hover {
+    background-color: #00ffc3;
+    color: #000;
+  }
+  input.edit-input {
+    width: 100%;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: none;
+    background-color: #222;
+    color: #eee;
+    font-size: 15px;
+  }
+  @media (max-width: 600px) {
+    th, td {
+      padding: 10px 5px;
+      font-size: 14px;
+    }
+    form {
+      flex-direction: column;
+    }
+    button {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  Online Saved People Table
+</header>
+
+<main>
+
+<form id="addPersonForm">
+  <input type="text" id="nameInput" placeholder="Enter name" required autocomplete="off" />
+  <select id="categoryInput" required>
+    <option value="" disabled selected>Select category</option>
+    <option value="Saved Beneficiary">Saved Beneficiary</option>
+    <option value="Saved Non-Human">Saved Non-Human</option>
+    <option value="Foundational">Foundational</option>
+  </select>
+  <button type="submit">Add Person</button>
+</form>
+
+<input type="text" id="searchInput" placeholder="Search by name or category..." />
+
+<table aria-label="Saved People Table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Name</th>
+      <th>Category</th>
+      <th>Saved At</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody id="peopleTableBody">
+    <!-- Dynamic rows -->
+  </tbody>
+</table>
+
+</main>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+  // Paste your Firebase config here:
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_AUTHDOMAIN",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_STORAGE_BUCKET",
+    messagingSenderId: "YOUR_MSG_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  // Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const addPersonForm = document.getElementById('addPersonForm');
+  const nameInput = document.getElementById('nameInput');
+  const categoryInput = document.getElementById('categoryInput');
+  const peopleTableBody = document.getElementById('peopleTableBody');
+  const searchInput = document.getElementById('searchInput');
+
+  let editingDocId = null;
+
+  // Add or update person
+  addPersonForm.addEventListener('submit', e => {
+    e.preventDefault();
+
+    const name = nameInput.value.trim();
+    const category = categoryInput.value;
+
+    if (!name || !category) {
+      alert('Please enter a name and select a category.');
+      return;
+    }
+
+    if(editingDocId) {
+      // Update existing doc
+      db.collection('people').doc(editingDocId).update({
+        name,
+        category
+      }).then(() => {
+        editingDocId = null;
+        addPersonForm.reset();
+        addPersonForm.querySelector('button').textContent = 'Add Person';
+      }).catch(err => {
+        alert('Error updating person: ' + err.message);
+      });
+    } else {
+      // Add new doc
+      db.collection('people').add({
+        name,
+        category,
+        savedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(() => {
+        addPersonForm.reset();
+      }).catch(err => {
+        alert('Error adding person: ' + err.message);
+      });
+    }
+  });
+
+  // Render people list
+  function renderPeople(docs) {
+    peopleTableBody.innerHTML = '';
+    if(docs.length === 0) {
+      peopleTableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#888;">No records found.</td></tr>`;
+      return;
+    }
+    let count = 1;
+    docs.forEach(doc => {
+      const data = doc.data();
+      const savedAt = data.savedAt ? data.savedAt.toDate().toLocaleString() : '...';
+      if (!filterMatches(data)) return;
+
+      const tr = document.createElement('tr');
+
+      tr.innerHTML = `
+        <td>${count++}</td>
+        <td class="name">${escapeHtml(data.name)}</td>
+        <td class="category">${escapeHtml(data.category)}</td>
+        <td>${savedAt}</td>
+        <td class="actions">
+          <button class="editBtn">Edit</button>
+          <button class="deleteBtn" style="background:#e04c4c; color:#fff;">Delete</button>
+        </td>
+      `;
+
+      // Edit handler
+      tr.querySelector('.editBtn').addEventListener('click', () => {
+        editingDocId = doc.id;
+        nameInput.value = data.name;
+        categoryInput.value = data.category;
+        addPersonForm.querySelector('button').textContent = 'Save Changes';
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      });
+
+      // Delete handler
+      tr.querySelector('.deleteBtn').addEventListener('click', () => {
+        if(confirm(`Are you sure you want to delete "${data.name}"?`)) {
+          db.collection('people').doc(doc.id).delete();
+          if(editingDocId === doc.id){
+            editingDocId = null;
+            addPersonForm.reset();
+            addPersonForm.querySelector('button').textContent = 'Add Person';
+          }
+        }
+      });
+
+      peopleTableBody.appendChild(tr);
+    });
+  }
+
+  // Simple escape for HTML
+  function escapeHtml(text) {
+    return text.replace(/[&<>"']/g, function(m) {
+      return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[m];
+    });
+  }
+
+  // Filter according to search input
+  function filterMatches(data) {
+    const searchText = searchInput.value.toLowerCase();
+    return data.name.toLowerCase().includes(searchText) || data.category.toLowerCase().includes(searchText);
+  }
+
+  // Listen for Firestore changes in real-time
+  db.collection('people').orderBy('savedAt', 'desc').onSnapshot(snapshot => {
+    renderPeople(snapshot.docs);
+  });
+
+  // Filter on search input
+  searchInput.addEventListener('input', () => {
+    db.collection('people').orderBy('savedAt', 'desc').get().then(snapshot => {
+      renderPeople(snapshot.docs);
+    });
+  });
+</script>
+
+</body>
+</html>
